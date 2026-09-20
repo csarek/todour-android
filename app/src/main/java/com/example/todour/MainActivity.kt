@@ -7,8 +7,12 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,29 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TodourApp(viewModel: MainViewModel) {
+    // Ha van kiválasztott jegyzet, a szerkesztő nézetet mutatjuk, egyébként a listát
+    var selectedItem by remember { mutableStateOf<Item?>(null) }
+
+    val current = selectedItem
+    if (current != null) {
+        EditNoteScreen(
+            item = current,
+            onSave = { newText ->
+                viewModel.update(current, newText)
+                selectedItem = null
+            },
+            onBack = { selectedItem = null }
+        )
+    } else {
+        NoteListScreen(
+            viewModel = viewModel,
+            onItemClick = { item -> selectedItem = item }
+        )
+    }
+}
+
+@Composable
+fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -52,16 +79,24 @@ fun TodourApp(viewModel: MainViewModel) {
                 singleLine = true
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = { viewModel.add(viewModel.query) }) {
-                Text("Hozzáadás")
+            // Kompakt kerek "+" gomb a nagy szöveges gomb helyett
+            IconButton(
+                onClick = { viewModel.add(viewModel.query) },
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.small)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Hozzáadás",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize()
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(
                 items = viewModel.filteredItems,
                 key = { it.id }
@@ -74,20 +109,46 @@ fun TodourApp(viewModel: MainViewModel) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { onItemClick(item) }
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = item.text,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1
                         )
                         IconButton(onClick = { viewModel.remove(item) }) {
-                            Text("✕")
+                            Icon(Icons.Default.Delete, contentDescription = "Törlés")
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun EditNoteScreen(item: Item, onSave: (String) -> Unit, onBack: () -> Unit) {
+    var text by remember { mutableStateOf(item.text) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("Jegyzet szerkesztése") },
+            navigationIcon = {
+                IconButton(onClick = { onSave(text) }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Vissza / Mentés")
+                }
+            }
+        )
+        TextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            placeholder = { Text("Írd ide a jegyzetet...") }
+        )
     }
 }
