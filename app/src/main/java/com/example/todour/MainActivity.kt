@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,31 +42,12 @@ class MainActivity : ComponentActivity() {
 fun TodourApp(viewModel: MainViewModel) {
     var selectedItem by remember { mutableStateOf<Item?>(null) }
 
-    val current = selectedItem
-    if (current != null) {
-        EditNoteScreen(
-            item = current,
-            onSave = { newText ->
-                viewModel.update(current, newText)
-                selectedItem = null
-            },
-            onBack = { selectedItem = null }
-        )
-    } else {
-        NoteListScreen(
-            viewModel = viewModel,
-            onItemClick = { item -> selectedItem = item }
-        )
-    }
-}
-
-@Composable
-fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // --- Kereső + hozzáadás ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -81,7 +61,11 @@ fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(
-                onClick = { viewModel.add(viewModel.query) },
+                onClick = {
+                    viewModel.add(viewModel.query)
+                    // Az újonnan létrehozott jegyzet automatikusan megnyílik szerkesztésre
+                    selectedItem = viewModel.items.firstOrNull()
+                },
                 modifier = Modifier
                     .size(48.dp)
                     .background(MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.small)
@@ -94,23 +78,35 @@ fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        // --- Lista (felső, kisebb rész) ---
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(0.4f)
+        ) {
             items(
                 items = viewModel.filteredItems,
                 key = { it.id }
             ) { item ->
+                val isSelected = item.id == selectedItem?.id
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp)
+                        .padding(vertical = 3.dp)
+                        .clickable { selectedItem = item },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onItemClick(item) }
-                            .padding(16.dp),
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -119,37 +115,46 @@ fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
                             modifier = Modifier.weight(1f),
                             maxLines = 1
                         )
-                        IconButton(onClick = { viewModel.remove(item) }) {
+                        IconButton(onClick = {
+                            viewModel.remove(item)
+                            if (selectedItem?.id == item.id) selectedItem = null
+                        }) {
                             Icon(Icons.Default.Delete, contentDescription = "Törlés")
                         }
                     }
                 }
             }
         }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditNoteScreen(item: Item, onSave: (String) -> Unit, onBack: () -> Unit) {
-    var text by remember { mutableStateOf(item.text) }
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("Jegyzet szerkesztése") },
-            navigationIcon = {
-                IconButton(onClick = { onSave(text) }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Vissza / Mentés")
-                }
+        // --- Szerkesztő (alsó, nagyobb rész) - itt jelenik meg a kiválasztott jegyzet ---
+        val current = selectedItem
+        if (current != null) {
+            var editedText by remember(current.id) { mutableStateOf(current.text) }
+            TextField(
+                value = editedText,
+                onValueChange = {
+                    editedText = it
+                    viewModel.update(current, it)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.6f),
+                placeholder = { Text("Írd ide a jegyzetet...") }
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.6f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Válassz egy jegyzetet a listából, vagy hozz létre újat.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        )
-        TextField(
-            value = text,
-            onValueChange = { text = it },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            placeholder = { Text("Írd ide a jegyzetet...") }
-        )
+        }
     }
 }
