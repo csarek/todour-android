@@ -1,7 +1,5 @@
 package com.example.todour
 
-package com.example.todour
-
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,7 +41,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TodourApp(viewModel: MainViewModel) {
-    // Ha van kiválasztott jegyzet, a szerkesztő nézetet mutatjuk, egyébként a listát
     var selectedItem by remember { mutableStateOf<Item?>(null) }
 
     val current = selectedItem
@@ -83,7 +80,6 @@ fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
                 singleLine = true
             )
             Spacer(modifier = Modifier.width(8.dp))
-            // Kompakt kerek "+" gomb a nagy szöveges gomb helyett
             IconButton(
                 onClick = { viewModel.add(viewModel.query) },
                 modifier = Modifier
