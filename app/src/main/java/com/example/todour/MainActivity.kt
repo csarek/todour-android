@@ -1,9 +1,13 @@
 package com.example.todour
 
+package com.example.todour
+
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -129,6 +133,7 @@ fun NoteListScreen(viewModel: MainViewModel, onItemClick: (Item) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditNoteScreen(item: Item, onSave: (String) -> Unit, onBack: () -> Unit) {
     var text by remember { mutableStateOf(item.text) }
