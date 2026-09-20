@@ -1,5 +1,7 @@
 package com.example.todour
+
 data class Item(
-val id: Long = System.currentTimeMillis(),
-val text: String
-) 
+    val id: String,
+    val name: String,
+    val text: String = ""
+)
