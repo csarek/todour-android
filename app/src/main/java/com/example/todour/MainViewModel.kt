@@ -22,6 +22,13 @@ class MainViewModel : ViewModel() {
         items.remove(item)
     }
 
+    fun update(item: Item, newText: String) {
+        val index = items.indexOfFirst { it.id == item.id }
+        if (index != -1) {
+            items[index] = item.copy(text = newText)
+        }
+    }
+
     val filteredItems: List<Item>
         get() {
             if (query.isBlank()) return items
