@@ -41,11 +41,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setVaultUri(uri: Uri) {
-        vaultUri = uri
-        prefs.edit().putString("vault_uri", uri.toString()).apply()
-        loadNotes()
-    }
+    fun selectVaultUri(uri: Uri) {
+    vaultUri = uri
+    prefs.edit().putString("vault_uri", uri.toString()).apply()
+    loadNotes()
+}
 
     fun setDateFormat(pattern: String) {
         dateFormatPattern = pattern
