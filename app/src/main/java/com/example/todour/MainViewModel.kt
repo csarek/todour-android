@@ -169,13 +169,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             writeFileContent(context, Uri.parse(item.id), newText)
         }
     }
-
-    val filteredItems: List<Item>
+        val filteredItems: List<Item>
         get() {
-            if (query.isBlank()) return items
-            return items.filter {
-                it.name.contains(query, ignoreCase = true) ||
-                    it.text.contains(query, ignoreCase = true)
+            val q = query.trim()
+            if (q.isBlank()) return items
+            return items
+                .filter { it.name.contains(q, ignoreCase = true) || it.text.contains(q, ignoreCase = true) }
+                .sortedByDescending { if (it.name.contains(q, ignoreCase = true)) 1 else 0 }
+    }
+
             }
         }
 }
