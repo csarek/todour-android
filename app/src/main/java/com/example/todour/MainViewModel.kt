@@ -3,6 +3,7 @@ package com.example.todour
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,7 +12,12 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -58,10 +64,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isLoading = true
         viewModelScope.launch {
             val found = withContext(Dispatchers.IO) {
-                val root = DocumentFile.fromTreeUri(context, uri)
-                val result = mutableListOf<Item>()
-                if (root != null) collectNotes(context, root, result)
-                result
+                collectNotesFast(context, uri)
             }
             items.clear()
             items.addAll(found)
@@ -69,24 +72,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun collectNotes(context: Context, dir: DocumentFile, out: MutableList<Item>) {
-        dir.listFiles().forEach { file ->
-            if (file.isDirectory) {
-                collectNotes(context, file, out)
-            } else {
-                val name = file.name ?: return@forEach
-                if (name.endsWith(".txt", true) || name.endsWith(".md", true)) {
-                    val content = try {
-                        context.contentResolver.openInputStream(file.uri)?.use { input ->
-                            BufferedReader(InputStreamReader(input)).readText()
-                        } ?: ""
-                    } catch (e: Exception) {
-                        ""
+    // Gyors, DocumentsContract-alapú rekurzív bejárás: mappánként EGY lekérdezés,
+    // majd a fájlok tartalma párhuzamosan (max 8 egyszerre) töltődik be.
+    private suspend fun collectNotesFast(context: Context, treeUri: Uri): List<Item> = coroutineScope {
+        val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+        val dirsToProcess = ArrayDeque<String>()
+        dirsToProcess.add(rootDocId)
+
+        val fileDocs = mutableListOf<Pair<String, String>>() // (fájl URI string, fájlnév)
+
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+
+        while (dirsToProcess.isNotEmpty()) {
+            val currentDocId = dirsToProcess.removeFirst()
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, currentDocId)
+
+            try {
+                context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+
+                    while (cursor.moveToNext()) {
+                        val docId = cursor.getString(idIndex)
+                        val name = cursor.getString(nameIndex) ?: continue
+                        val mime = cursor.getString(mimeIndex)
+
+                        if (name.startsWith(".")) continue // .obsidian, .trash stb. kihagyása
+
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            dirsToProcess.add(docId)
+                        } else if (name.endsWith(".md", true) || name.endsWith(".txt", true)) {
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            fileDocs.add(docUri.toString() to name)
+                        }
                     }
-                    out.add(Item(id = file.uri.toString(), name = name, text = content))
                 }
+            } catch (e: Exception) {
+                // egy hibás almappa ne állítsa meg a teljes bejárást
             }
         }
+
+        val semaphore = Semaphore(8)
+        fileDocs.map { (uriString, name) ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    val content = readFileContent(context, Uri.parse(uriString))
+                    Item(id = uriString, name = name, text = content)
+                }
+            }
+        }.awaitAll()
     }
 
     private fun getOrCreateFolder(root: DocumentFile, name: String): DocumentFile? {
