@@ -220,48 +220,55 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.4f)
-                ) {
+    modifier = Modifier
+        .fillMaxWidth()
+        .weight(0.55f)
+) {
                     items(
                         items = viewModel.filteredItems,
                         key = { it.id }
                     ) { item ->
                         val isSelected = item.id == selectedItem?.id
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp)
-                                .clickable { selectedItem = item },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = item.name,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1
-                                )
-                                IconButton(onClick = {
-                                    viewModel.remove(item)
-                                    if (selectedItem?.id == item.id) selectedItem = null
-                                }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Törlés")
-                                }
-                            }
-                        }
-                    }
+                       Card(
+    modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 1.dp)
+        .clickable { selectedItem = item },
+    colors = CardDefaults.cardColors(
+        containerColor = if (isSelected)
+            MaterialTheme.colorScheme.primaryContainer
+        else
+            MaterialTheme.colorScheme.surfaceVariant
+    )
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = item.name,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        IconButton(
+            onClick = {
+                viewModel.remove(item)
+                if (selectedItem?.id == item.id) selectedItem = null
+            },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Törlés",
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}                     }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -275,10 +282,10 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                             editedText = it
                             viewModel.update(current, it)
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(0.6f),
-                        placeholder = { Text("Írd ide a jegyzetet...") }
+                       modifier = Modifier
+    .fillMaxWidth()
+    .weight(0.45f),
+placeholder = { Text("Írd ide a jegyzetet...") }
                     )
                 } else {
                     Box(
