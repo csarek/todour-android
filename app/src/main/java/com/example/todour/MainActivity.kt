@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            viewModel.setVaultUri(it)
+            viewModel.selectVaultUri(it)
         }
     }
 
