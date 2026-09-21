@@ -1,7 +1,7 @@
 package com.example.todour
 
 import android.app.Application
-import android.content.Context        
+import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -42,10 +42,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectVaultUri(uri: Uri) {
-    vaultUri = uri
-    prefs.edit().putString("vault_uri", uri.toString()).apply()
-    loadNotes()
-}
+        vaultUri = uri
+        prefs.edit().putString("vault_uri", uri.toString()).apply()
+        loadNotes()
+    }
 
     fun setDateFormat(pattern: String) {
         dateFormatPattern = pattern
@@ -111,7 +111,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { }
     }
 
-    // Új jegyzet -> pages/ mappa
     fun add(text: String) {
         val uri = vaultUri ?: return
         if (text.isBlank()) return
@@ -126,7 +125,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         query = ""
     }
 
-    // Napló bejegyzés -> journals/ mappa, mai dátummal, hozzáfűzve ha már létezik
     fun addJournalEntry(text: String) {
         val uri = vaultUri ?: return
         if (text.isBlank()) return
@@ -169,15 +167,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             writeFileContent(context, Uri.parse(item.id), newText)
         }
     }
-        val filteredItems: List<Item>
+
+    val filteredItems: List<Item>
         get() {
             val q = query.trim()
             if (q.isBlank()) return items
             return items
                 .filter { it.name.contains(q, ignoreCase = true) || it.text.contains(q, ignoreCase = true) }
                 .sortedByDescending { if (it.name.contains(q, ignoreCase = true)) 1 else 0 }
-    }
-
-            }
         }
 }
