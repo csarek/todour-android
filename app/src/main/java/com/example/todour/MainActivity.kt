@@ -22,10 +22,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.os.Build
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && viewModel.vaultUri != null) {
+            NotificationHelper.showQuickCaptureNotification(this)
+        }
+    }
 
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -36,11 +45,14 @@ class MainActivity : ComponentActivity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             viewModel.selectVaultUri(it)
+            requestNotificationPermissionAndShow()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        NotificationHelper.createChannel(this)
 
         setContent {
             MaterialTheme {
@@ -54,6 +66,23 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+
+        if (viewModel.vaultUri != null) {
+            requestNotificationPermissionAndShow()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.loadNotes()
+    }
+
+    private fun requestNotificationPermissionAndShow() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            NotificationHelper.showQuickCaptureNotification(this)
         }
     }
 }
