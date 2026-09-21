@@ -220,11 +220,10 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(item.name, style = MaterialTheme.typography.labelSmall)
-                                    Text(
-                                        text = item.text.take(60).replace("\n", " "),
-                                        maxLines = 1
+                                Text(
+                                    text = item.name,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1
                                     )
                                 }
                                 IconButton(onClick = {
