@@ -22,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import android.os.Build
 
 class MainActivity : ComponentActivity() {
 
@@ -253,8 +252,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                                     text = item.name,
                                     modifier = Modifier.weight(1f),
                                     maxLines = 1
-                                    )
-                                }
+                                )
                                 IconButton(onClick = {
                                     viewModel.remove(item)
                                     if (selectedItem?.id == item.id) selectedItem = null
