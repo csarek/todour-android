@@ -7,16 +7,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,7 +52,7 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.createChannel(this)
 
         setContent {
-            MaterialTheme {
+            TodourTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -86,19 +84,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
     var selectedItem by remember { mutableStateOf<Item?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var showJournalDialog by remember { mutableStateOf(false) }
+    var showAddTypeDialog by remember { mutableStateOf(false) }
+    var menuForItemId by remember { mutableStateOf<String?>(null) }
 
-    if (showJournalDialog) {
-        JournalEntryDialog(
-            onDismiss = { showJournalDialog = false },
-            onConfirm = { text ->
-                viewModel.addJournalEntry(text)
-                showJournalDialog = false
+    if (showAddTypeDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddTypeDialog = false },
+            title = { Text("Mit szeretnél létrehozni?") },
+            text = { Text("„${viewModel.query.take(60)}”") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.add(viewModel.query)
+                    selectedItem = viewModel.items.firstOrNull()
+                    showAddTypeDialog = false
+                }) { Text("Új jegyzet") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.addJournalEntry(viewModel.query)
+                    viewModel.query = ""
+                    showAddTypeDialog = false
+                }) { Text("Napló bejegyzés") }
             }
         )
     }
@@ -106,7 +117,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Todour") },
+                title = { Text("Todour", style = MaterialTheme.typography.titleLarge) },
                 actions = {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menü")
@@ -144,7 +155,10 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                             }
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -152,7 +166,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             if (viewModel.vaultUri == null) {
                 Box(
@@ -183,31 +197,24 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                         value = viewModel.query,
                         onValueChange = { viewModel.query = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("Jegyzet / Keresés...") },
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { showJournalDialog = true },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(MaterialTheme.colorScheme.secondary, shape = MaterialTheme.shapes.small)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Book,
-                            contentDescription = "Napló bejegyzés",
-                            tint = MaterialTheme.colorScheme.onSecondary
+                        placeholder = { Text("Jegyzet / Keresés...", style = MaterialTheme.typography.bodyMedium) },
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
                         )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                     IconButton(
                         onClick = {
-                            viewModel.add(viewModel.query)
-                            selectedItem = viewModel.items.firstOrNull()
+                            if (viewModel.query.isNotBlank()) showAddTypeDialog = true
                         },
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.small)
+                            .size(44.dp)
+                            .background(MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.medium)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -217,58 +224,63 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 LazyColumn(
-    modifier = Modifier
-        .fillMaxWidth()
-        .weight(0.55f)
-) {
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.55f)
+                ) {
                     items(
                         items = viewModel.filteredItems,
                         key = { it.id }
                     ) { item ->
                         val isSelected = item.id == selectedItem?.id
-                       Card(
-    modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 1.dp)
-        .clickable { selectedItem = item },
-    colors = CardDefaults.cardColors(
-        containerColor = if (isSelected)
-            MaterialTheme.colorScheme.primaryContainer
-        else
-            MaterialTheme.colorScheme.surfaceVariant
-    )
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = item.name,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            style = MaterialTheme.typography.bodyMedium
-        )
-        IconButton(
-            onClick = {
-                viewModel.remove(item)
-                if (selectedItem?.id == item.id) selectedItem = null
-            },
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Törlés",
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}                     }
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .combinedClickable(
+                                        onClick = { selectedItem = item },
+                                        onLongClick = { menuForItemId = item.id }
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Text(
+                                    text = item.name,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                                    maxLines = 1,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = menuForItemId == item.id,
+                                onDismissRequest = { menuForItemId = null }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Törlés") },
+                                    onClick = {
+                                        viewModel.remove(item)
+                                        if (selectedItem?.id == item.id) selectedItem = null
+                                        menuForItemId = null
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -282,16 +294,23 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                             editedText = it
                             viewModel.update(current, it)
                         },
-                       modifier = Modifier
-    .fillMaxWidth()
-    .weight(0.45f),
-placeholder = { Text("Írd ide a jegyzetet...") }
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(0.45f),
+                        placeholder = { Text("Írd ide a jegyzetet...") },
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        colors = TextFieldDefaults.colors(
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                        )
                     )
                 } else {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(0.6f),
+                            .weight(0.45f),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -303,27 +322,4 @@ placeholder = { Text("Írd ide a jegyzetet...") }
             }
         }
     }
-}
-
-@Composable
-fun JournalEntryDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Napló bejegyzés") },
-        text = {
-            TextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("Mi történt ma?") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(text) }) { Text("Mentés") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Mégse") }
-        }
-    )
 }
