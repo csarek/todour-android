@@ -1,5 +1,5 @@
 package com.example.todour
- 
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -27,11 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
- 
+
 class MainActivity : ComponentActivity() {
- 
+
     private val viewModel: MainViewModel by viewModels()
- 
+    private var pendingOpenItemId by mutableStateOf<String?>(null)
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -39,7 +40,7 @@ class MainActivity : ComponentActivity() {
             NotificationHelper.showQuickCaptureNotification(this)
         }
     }
- 
+
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
@@ -52,12 +53,13 @@ class MainActivity : ComponentActivity() {
             requestNotificationPermissionAndShow()
         }
     }
- 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
- 
+
         NotificationHelper.createChannel(this)
- 
+        pendingOpenItemId = intent?.getStringExtra("open_item_id")
+
         setContent {
             TodourTheme(darkTheme = viewModel.isDarkTheme) {
                 Surface(
@@ -66,23 +68,31 @@ class MainActivity : ComponentActivity() {
                 ) {
                     TodourApp(
                         viewModel = viewModel,
-                        onPickFolder = { folderPickerLauncher.launch(null) }
+                        onPickFolder = { folderPickerLauncher.launch(null) },
+                        openItemId = pendingOpenItemId,
+                        onOpenItemHandled = { pendingOpenItemId = null }
                     )
                 }
             }
         }
- 
+
         if (viewModel.vaultUri != null) {
             requestNotificationPermissionAndShow()
         }
     }
- 
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingOpenItemId = intent.getStringExtra("open_item_id")
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.loadNotes()
         WidgetUpdater.requestUpdate(this)
     }
- 
+
     private fun requestNotificationPermissionAndShow() {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -91,25 +101,41 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
- 
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
+fun TodourApp(
+    viewModel: MainViewModel,
+    onPickFolder: () -> Unit,
+    openItemId: String? = null,
+    onOpenItemHandled: () -> Unit = {}
+) {
     var selectedItem by remember { mutableStateOf<Item?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
     var showAddTypeDialog by remember { mutableStateOf(false) }
     var menuForItemId by remember { mutableStateOf<String?>(null) }
- 
+
     var showFocusDialog by remember { mutableStateOf(false) }
     var showTodoWaitDialog by remember { mutableStateOf(false) }
     var showTagsDialog by remember { mutableStateOf(false) }
     var showDueDialog by remember { mutableStateOf(false) }
     var showContextsDialog by remember { mutableStateOf(false) }
     var showJournalListDialog by remember { mutableStateOf(false) }
- 
+
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
- 
+
+    // Widgetről érkező megnyitási kérés kezelése
+    LaunchedEffect(openItemId, viewModel.items.size) {
+        if (openItemId != null) {
+            val found = viewModel.items.find { it.id == openItemId }
+            if (found != null) {
+                selectedItem = found
+                onOpenItemHandled()
+            }
+        }
+    }
+
     if (showAddTypeDialog) {
         AlertDialog(
             onDismissRequest = { showAddTypeDialog = false },
@@ -118,7 +144,6 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.add(viewModel.query)
-                    selectedItem = viewModel.items.firstOrNull()
                     showAddTypeDialog = false
                 }) { Text("Új jegyzet") }
             },
@@ -131,7 +156,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -142,22 +167,22 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                     modifier = Modifier.padding(16.dp)
                 )
                 HorizontalDivider()
-              NavigationDrawerItem(
-    label = { Text("📅 Ma") },
-    selected = false,
-    onClick = {
-        viewModel.getOrOpenTodayNote { item -> item?.let { selectedItem = it } }
-        scope.launch { drawerState.close() }
-    }
-)
-         NavigationDrawerItem(
-    label = { Text("📥 Inbox") },
-    selected = false,
-    onClick = {
-        viewModel.getOrOpenInbox { item -> item?.let { selectedItem = it } }
-        scope.launch { drawerState.close() }
-    }
-)     
+                NavigationDrawerItem(
+                    label = { Text("📅 Ma") },
+                    selected = false,
+                    onClick = {
+                        viewModel.getOrOpenTodayNote { item -> item?.let { selectedItem = it } }
+                        scope.launch { drawerState.close() }
+                    }
+                )
+                NavigationDrawerItem(
+                    label = { Text("📥 Inbox") },
+                    selected = false,
+                    onClick = {
+                        viewModel.getOrOpenInbox { item -> item?.let { selectedItem = it } }
+                        scope.launch { drawerState.close() }
+                    }
+                )
                 NavigationDrawerItem(
                     label = { Text("🎯 Fókusz") },
                     selected = false,
@@ -330,9 +355,9 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                             )
                         }
                     }
- 
+
                     Spacer(modifier = Modifier.height(14.dp))
- 
+
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -389,9 +414,9 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                             }
                         }
                     }
- 
+
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
- 
+
                     val current = selectedItem
                     if (current != null) {
                         var editedText by remember(current.id) { mutableStateOf(current.text) }
@@ -430,7 +455,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         }
     }
- 
+
     // ---- Fókusz dialógus ----
     if (showFocusDialog) {
         val entries = viewModel.focusEntries()
@@ -438,7 +463,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
         val overdue = entries.filter { it.date.isBefore(today) }
         val dueToday = entries.filter { it.date.isEqual(today) }
         val upcoming = entries.filter { it.date.isAfter(today) }
- 
+
         AlertDialog(
             onDismissRequest = { showFocusDialog = false },
             title = { Text("Fókusz") },
@@ -502,7 +527,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     // ---- TODO / WAIT dialógus ----
     if (showTodoWaitDialog) {
         val entries = viewModel.todoWaitEntries()
@@ -534,7 +559,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     // ---- Címkék dialógus ----
     if (showTagsDialog) {
         val groups = viewModel.tagIndex()
@@ -573,7 +598,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     // ---- Határidők (teljes lista) dialógus ----
     if (showDueDialog) {
         val entries = viewModel.dueList()
@@ -611,7 +636,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     // ---- Kontextusok dialógus ----
     if (showContextsDialog) {
         val groups = viewModel.contextIndex()
@@ -650,7 +675,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         )
     }
- 
+
     // ---- Napló időrendi dialógus ----
     if (showJournalListDialog) {
         val journalItems = viewModel.journalChronological()
@@ -683,4 +708,3 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
         )
     }
 }
- 
