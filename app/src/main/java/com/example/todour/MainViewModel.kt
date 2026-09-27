@@ -66,25 +66,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("dark_theme", isDarkTheme).apply()
     }
 
-    fun getOrOpenTodayNote(): Item? {
-        val uri = vaultUri ?: return null
-        val context = getApplication<Application>()
-        val root = DocumentFile.fromTreeUri(context, uri) ?: return null
-        val journalsFolder = getOrCreateFolder(root, "journals") ?: return null
+    fun getOrOpenTodayNote(onResult: (Item?) -> Unit) {
+        val uri = vaultUri
+        if (uri == null) {
+            onResult(null)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val root = DocumentFile.fromTreeUri(context, uri)
+            if (root == null) {
+                withContext(Dispatchers.Main) { onResult(null) }
+                return@launch
+            }
+            val journalsFolder = getOrCreateFolder(root, "journals")
+            if (journalsFolder == null) {
+                withContext(Dispatchers.Main) { onResult(null) }
+                return@launch
+            }
 
-        val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
-        val fileName = sdf.format(Date()) + ".md"
-        val existing = journalsFolder.findFile(fileName)
-        val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
-        val targetUri = targetFile?.uri ?: return null
+            val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
+            val fileName = sdf.format(Date()) + ".md"
+            val existing = journalsFolder.findFile(fileName)
+            val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
+            val targetUri = targetFile?.uri
+            if (targetUri == null) {
+                withContext(Dispatchers.Main) { onResult(null) }
+                return@launch
+            }
 
-        val content = readFileContent(context, targetUri)
-        val item = Item(id = targetUri.toString(), name = fileName, text = content, folder = "journals")
+            val content = readFileContent(context, targetUri)
+            val item = Item(id = targetUri.toString(), name = fileName, text = content, folder = "journals")
 
-        val existingIndex = items.indexOfFirst { it.id == item.id }
-        if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
-
-        return item
+            withContext(Dispatchers.Main) {
+                val existingIndex = items.indexOfFirst { it.id == item.id }
+                if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
+                onResult(item)
+            }
+        }
     }
 
     fun loadNotes() {
@@ -180,47 +199,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun add(text: String) {
         val uri = vaultUri ?: return
         if (text.isBlank()) return
-        val context = getApplication<Application>()
-        val root = DocumentFile.fromTreeUri(context, uri) ?: return
-        val pagesFolder = getOrCreateFolder(root, "pages") ?: return
-        val fileName = text.trim().take(40)
-            .replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".md"
-        val newFile = pagesFolder.createFile("text/markdown", fileName) ?: return
-        writeFileContent(context, newFile.uri, text.trim())
-        items.add(0, Item(id = newFile.uri.toString(), name = fileName, text = text.trim(), folder = "pages"))
-        query = ""
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val root = DocumentFile.fromTreeUri(context, uri) ?: return@launch
+            val pagesFolder = getOrCreateFolder(root, "pages") ?: return@launch
+            val fileName = text.trim().take(40)
+                .replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".md"
+            val newFile = pagesFolder.createFile("text/markdown", fileName) ?: return@launch
+            writeFileContent(context, newFile.uri, text.trim())
+            withContext(Dispatchers.Main) {
+                items.add(0, Item(id = newFile.uri.toString(), name = fileName, text = text.trim(), folder = "pages"))
+                query = ""
+            }
+        }
     }
 
     fun addJournalEntry(text: String) {
         val uri = vaultUri ?: return
         if (text.isBlank()) return
-        val context = getApplication<Application>()
-        val root = DocumentFile.fromTreeUri(context, uri) ?: return
-        val journalsFolder = getOrCreateFolder(root, "journals") ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val root = DocumentFile.fromTreeUri(context, uri) ?: return@launch
+            val journalsFolder = getOrCreateFolder(root, "journals") ?: return@launch
 
-        val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
-        val fileName = sdf.format(Date()) + ".md"
-        val existing = journalsFolder.findFile(fileName)
+            val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
+            val fileName = sdf.format(Date()) + ".md"
+            val existing = journalsFolder.findFile(fileName)
 
-        val previousContent = existing?.let { readFileContent(context, it.uri) } ?: ""
-        val newContent = if (previousContent.isBlank()) text.trim()
-            else "$previousContent\n\n${text.trim()}"
+            val previousContent = existing?.let { readFileContent(context, it.uri) } ?: ""
+            val newContent = if (previousContent.isBlank()) text.trim()
+                else "$previousContent\n\n${text.trim()}"
 
-        val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
-        val targetUri = targetFile?.uri ?: return
-        writeFileContent(context, targetUri, newContent)
+            val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
+            val targetUri = targetFile?.uri ?: return@launch
+            writeFileContent(context, targetUri, newContent)
 
-        val existingIndex = items.indexOfFirst { it.id == targetUri.toString() }
-        val updatedItem = Item(id = targetUri.toString(), name = fileName, text = newContent, folder = "journals")
-        if (existingIndex != -1) items[existingIndex] = updatedItem else items.add(0, updatedItem)
+            withContext(Dispatchers.Main) {
+                val existingIndex = items.indexOfFirst { it.id == targetUri.toString() }
+                val updatedItem = Item(id = targetUri.toString(), name = fileName, text = newContent, folder = "journals")
+                if (existingIndex != -1) items[existingIndex] = updatedItem else items.add(0, updatedItem)
+            }
+        }
     }
 
     fun remove(item: Item) {
-        val context = getApplication<Application>()
-        try {
-            DocumentFile.fromSingleUri(context, Uri.parse(item.id))?.delete()
-        } catch (e: Exception) { }
         items.removeAll { it.id == item.id }
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            try {
+                DocumentFile.fromSingleUri(context, Uri.parse(item.id))?.delete()
+            } catch (e: Exception) { }
+        }
     }
 
     fun update(item: Item, newText: String) {
