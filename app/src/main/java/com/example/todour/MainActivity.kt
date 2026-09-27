@@ -142,14 +142,14 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                     modifier = Modifier.padding(16.dp)
                 )
                 HorizontalDivider()
-                NavigationDrawerItem(
-                    label = { Text("📅 Ma") },
-                    selected = false,
-                    onClick = {
-                        viewModel.getOrOpenTodayNote()?.let { selectedItem = it }
-                        scope.launch { drawerState.close() }
-                    }
-                )
+              NavigationDrawerItem(
+    label = { Text("📅 Ma") },
+    selected = false,
+    onClick = {
+        viewModel.getOrOpenTodayNote { item -> item?.let { selectedItem = it } }
+        scope.launch { drawerState.close() }
+    }
+)
                 NavigationDrawerItem(
                     label = { Text("🎯 Fókusz") },
                     selected = false,
