@@ -49,14 +49,28 @@
 
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/widget_status"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textSize="12sp"
-        android:textColor="@color/widget_text"
-        android:maxLines="6"
-        android:text="Betöltés..." />
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/widget_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@null"
+            android:dividerHeight="2dp" />
+
+        <TextView
+            android:id="@+id/widget_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text"
+            android:text="Nincs adat." />
+
+    </FrameLayout>
 
 </LinearLayout>
