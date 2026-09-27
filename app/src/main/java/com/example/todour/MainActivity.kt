@@ -150,6 +150,14 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
         scope.launch { drawerState.close() }
     }
 )
+         NavigationDrawerItem(
+    label = { Text("📥 Inbox") },
+    selected = false,
+    onClick = {
+        viewModel.getOrOpenInbox { item -> item?.let { selectedItem = it } }
+        scope.launch { drawerState.close() }
+    }
+)     
                 NavigationDrawerItem(
                     label = { Text("🎯 Fókusz") },
                     selected = false,
