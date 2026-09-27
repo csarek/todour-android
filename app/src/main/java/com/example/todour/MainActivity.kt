@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.createChannel(this)
 
         setContent {
-            TodourTheme {
+           TodourTheme(darkTheme = viewModel.isDarkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -92,6 +92,7 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showAddTypeDialog by remember { mutableStateOf(false) }
     var menuForItemId by remember { mutableStateOf<String?>(null) }
+    var showFocusDialog by remember { mutableStateOf(false) }
 
     if (showAddTypeDialog) {
         AlertDialog(
@@ -141,6 +142,13 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
                                 viewModel.loadNotes()
                             }
                         )
+                        DropdownMenuItem(
+    text = { Text(if (viewModel.isDarkTheme) "Világos téma" else "Sötét téma") },
+    onClick = {
+        menuExpanded = false
+        viewModel.toggleTheme()
+    }
+)
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = {
@@ -227,6 +235,17 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+Row(modifier = Modifier.fillMaxWidth()) {
+    TextButton(onClick = { viewModel.getOrOpenTodayNote()?.let { selectedItem = it } }) {
+        Text("📅 Ma")
+    }
+    Spacer(modifier = Modifier.width(4.dp))
+    TextButton(onClick = { showFocusDialog = true }) {
+        Text("🎯 Fókusz")
+    }
+}
+Spacer(modifier = Modifier.height(8.dp))
+                
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -323,4 +342,41 @@ fun TodourApp(viewModel: MainViewModel, onPickFolder: () -> Unit) {
             }
         }
     }
+    if (showFocusDialog) {
+    val entries = viewModel.focusEntries()
+    val today = java.time.LocalDate.now()
+    val overdue = entries.filter { it.date.isBefore(today) }
+    val dueToday = entries.filter { it.date.isEqual(today) }
+    val upcoming = entries.filter { it.date.isAfter(today) }
+
+    AlertDialog(
+        onDismissRequest = { showFocusDialog = false },
+        title = { Text("Fókusz") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (entries.isEmpty()) {
+                    Text("Nincs due: dátumos bejegyzés a következő 3 napban.")
+                } else {
+                    if (overdue.isNotEmpty()) {
+                        Text("⏰ Lejárt", style = MaterialTheme.typography.labelSmall)
+                        overdue.forEach { Text("• ${it.line}  (${it.itemName})", modifier = Modifier.padding(vertical = 2.dp)) }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    if (dueToday.isNotEmpty()) {
+                        Text("📌 Ma", style = MaterialTheme.typography.labelSmall)
+                        dueToday.forEach { Text("• ${it.line}  (${it.itemName})", modifier = Modifier.padding(vertical = 2.dp)) }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    if (upcoming.isNotEmpty()) {
+                        Text("🔜 Következő 3 nap", style = MaterialTheme.typography.labelSmall)
+                        upcoming.forEach { Text("• ${it.line}  (${it.itemName})", modifier = Modifier.padding(vertical = 2.dp)) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { showFocusDialog = false }) { Text("Bezár") }
+        }
+    )
+}
 }
