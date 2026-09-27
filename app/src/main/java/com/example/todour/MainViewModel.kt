@@ -39,14 +39,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var dateFormatPattern by mutableStateOf("yyyy_MM_dd")
         private set
     var isDarkTheme by mutableStateOf(false)
-    private set
+        private set
 
     init {
         dateFormatPattern = prefs.getString("journal_date_format", "yyyy_MM_dd") ?: "yyyy_MM_dd"
+        isDarkTheme = prefs.getBoolean("dark_theme", false)
         prefs.getString("vault_uri", null)?.let { saved ->
             vaultUri = Uri.parse(saved)
             loadNotes()
-        isDarkTheme = prefs.getBoolean("dark_theme", false)
         }
     }
 
@@ -62,30 +62,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleTheme() {
-    isDarkTheme = !isDarkTheme
-    prefs.edit().putBoolean("dark_theme", isDarkTheme).apply()
-}
+        isDarkTheme = !isDarkTheme
+        prefs.edit().putBoolean("dark_theme", isDarkTheme).apply()
+    }
 
-fun getOrOpenTodayNote(): Item? {
-    val uri = vaultUri ?: return null
-    val context = getApplication<Application>()
-    val root = DocumentFile.fromTreeUri(context, uri) ?: return null
-    val journalsFolder = getOrCreateFolder(root, "journals") ?: return null
+    fun getOrOpenTodayNote(): Item? {
+        val uri = vaultUri ?: return null
+        val context = getApplication<Application>()
+        val root = DocumentFile.fromTreeUri(context, uri) ?: return null
+        val journalsFolder = getOrCreateFolder(root, "journals") ?: return null
 
-    val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
-    val fileName = sdf.format(Date()) + ".md"
-    val existing = journalsFolder.findFile(fileName)
-    val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
-    val targetUri = targetFile?.uri ?: return null
+        val sdf = SimpleDateFormat(dateFormatPattern, Locale.getDefault())
+        val fileName = sdf.format(Date()) + ".md"
+        val existing = journalsFolder.findFile(fileName)
+        val targetFile = existing ?: journalsFolder.createFile("text/markdown", fileName)
+        val targetUri = targetFile?.uri ?: return null
 
-    val content = readFileContent(context, targetUri)
-    val item = Item(id = targetUri.toString(), name = fileName, text = content)
+        val content = readFileContent(context, targetUri)
+        val item = Item(id = targetUri.toString(), name = fileName, text = content)
 
-    val existingIndex = items.indexOfFirst { it.id == item.id }
-    if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
+        val existingIndex = items.indexOfFirst { it.id == item.id }
+        if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
 
-    return item
-}
+        return item
+    }
 
     fun loadNotes() {
         val uri = vaultUri ?: return
@@ -101,14 +101,12 @@ fun getOrOpenTodayNote(): Item? {
         }
     }
 
-    // Gyors, DocumentsContract-alapú rekurzív bejárás: mappánként EGY lekérdezés,
-    // majd a fájlok tartalma párhuzamosan (max 8 egyszerre) töltődik be.
     private suspend fun collectNotesFast(context: Context, treeUri: Uri): List<Item> = coroutineScope {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val dirsToProcess = ArrayDeque<String>()
         dirsToProcess.add(rootDocId)
 
-        val fileDocs = mutableListOf<Pair<String, String>>() // (fájl URI string, fájlnév)
+        val fileDocs = mutableListOf<Pair<String, String>>()
 
         val projection = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -131,7 +129,7 @@ fun getOrOpenTodayNote(): Item? {
                         val name = cursor.getString(nameIndex) ?: continue
                         val mime = cursor.getString(mimeIndex)
 
-                        if (name.startsWith(".")) continue // .obsidian, .trash stb. kihagyása
+                        if (name.startsWith(".")) continue
 
                         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                             dirsToProcess.add(docId)
@@ -142,7 +140,6 @@ fun getOrOpenTodayNote(): Item? {
                     }
                 }
             } catch (e: Exception) {
-                // egy hibás almappa ne állítsa meg a teljes bejárást
             }
         }
 
@@ -243,36 +240,36 @@ fun getOrOpenTodayNote(): Item? {
             return items
                 .filter { it.name.contains(q, ignoreCase = true) || it.text.contains(q, ignoreCase = true) }
                 .sortedByDescending { if (it.name.contains(q, ignoreCase = true)) 1 else 0 }
-        
-            data class FocusEntry(
-    val itemId: String,
-    val itemName: String,
-    val line: String,
-    val date: java.time.LocalDate
-)
+        }
 
-fun focusEntries(): List<FocusEntry> {
-    val today = java.time.LocalDate.now()
-    val limit = today.plusDays(3)
-    val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
-    val result = mutableListOf<FocusEntry>()
+    data class FocusEntry(
+        val itemId: String,
+        val itemName: String,
+        val line: String,
+        val date: java.time.LocalDate
+    )
 
-    items.forEach { item ->
-        item.text.lines().forEach { line ->
-            val match = regex.find(line)
-            if (match != null) {
-                val date = try {
-                    java.time.LocalDate.parse(match.groupValues[1])
-                } catch (e: Exception) {
-                    null
-                }
-                if (date != null && !date.isAfter(limit)) {
-                    result.add(FocusEntry(item.id, item.name, line.trim(), date))
+    fun focusEntries(): List<FocusEntry> {
+        val today = java.time.LocalDate.now()
+        val limit = today.plusDays(3)
+        val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
+        val result = mutableListOf<FocusEntry>()
+
+        items.forEach { item ->
+            item.text.lines().forEach { line ->
+                val match = regex.find(line)
+                if (match != null) {
+                    val date = try {
+                        java.time.LocalDate.parse(match.groupValues[1])
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (date != null && !date.isAfter(limit)) {
+                        result.add(FocusEntry(item.id, item.name, line.trim(), date))
+                    }
                 }
             }
         }
+        return result.sortedBy { it.date }
     }
-    return result.sortedBy { it.date }
-}
-        }
 }
