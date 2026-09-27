@@ -106,6 +106,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun getOrOpenInbox(onResult: (Item?) -> Unit) {
+    val uri = vaultUri
+    if (uri == null) {
+        onResult(null)
+        return
+    }
+    viewModelScope.launch(Dispatchers.IO) {
+        val context = getApplication<Application>()
+        val root = DocumentFile.fromTreeUri(context, uri)
+        if (root == null) {
+            withContext(Dispatchers.Main) { onResult(null) }
+            return@launch
+        }
+        val existing = root.findFile("INBOX.md")
+        val targetFile = existing ?: root.createFile("text/markdown", "INBOX.md")
+        val targetUri = targetFile?.uri
+        if (targetUri == null) {
+            withContext(Dispatchers.Main) { onResult(null) }
+            return@launch
+        }
+
+        val content = readFileContent(context, targetUri)
+        val item = Item(id = targetUri.toString(), name = "INBOX.md", text = content, folder = "")
+
+        withContext(Dispatchers.Main) {
+            val existingIndex = items.indexOfFirst { it.id == item.id }
+            if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
+            onResult(item)
+        }
+    }
+}
+    
     fun loadNotes() {
         val uri = vaultUri ?: return
         val context = getApplication<Application>()
