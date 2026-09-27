@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.loadNotes()
+        WidgetUpdater.requestUpdate(this)
     }
  
     private fun requestNotificationPermissionAndShow() {
