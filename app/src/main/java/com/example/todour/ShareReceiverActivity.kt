@@ -14,6 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,14 +43,22 @@ class ShareReceiverActivity : ComponentActivity() {
                         sharedText = sharedText,
                         hasVault = vaultUriString != null,
                         onSendToInbox = {
-                            saveToInbox(vaultUriString, sharedText)
-                            Toast.makeText(this, "Elmentve az Inbox-ba", Toast.LENGTH_SHORT).show()
-                            finish()
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                saveToInbox(vaultUriString, sharedText)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(this@ShareReceiverActivity, "Elmentve az Inbox-ba", Toast.LENGTH_SHORT).show()
+                                    finish()
+                                }
+                            }
                         },
                         onSendToJournal = {
-                            saveToJournal(vaultUriString, datePattern, sharedText)
-                            Toast.makeText(this, "Elmentve a napi jegyzetbe", Toast.LENGTH_SHORT).show()
-                            finish()
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                saveToJournal(vaultUriString, datePattern, sharedText)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(this@ShareReceiverActivity, "Elmentve a napi jegyzetbe", Toast.LENGTH_SHORT).show()
+                                    finish()
+                                }
+                            }
                         },
                         onCancel = { finish() }
                     )
