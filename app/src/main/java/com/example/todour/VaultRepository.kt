@@ -100,7 +100,7 @@ object VaultRepository {
         return root.findFile(name)?.takeIf { it.isDirectory } ?: root.createDirectory(name)
     }
 
-    fun computeFocusEntries(items: List<Item>): List<FocusEntry> {
+    private fun computeFocusEntries(items: List<Item>): List<FocusEntry> {
         val today = java.time.LocalDate.now()
         val limit = today.plusDays(3)
         val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
@@ -124,22 +124,22 @@ object VaultRepository {
         return result.sortedBy { it.date }
     }
 
-    private fun computeTodoWait(items: List<Item>): List<String> {
-        val result = mutableListOf<String>()
+    private fun computeTodoWait(items: List<Item>): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
         items.forEach { item ->
             item.text.lines().forEach { line ->
                 val trimmed = line.trim()
                 if (trimmed.startsWith("TODO") || trimmed.startsWith("WAIT")) {
-                    result.add(trimmed)
+                    result.add(item.id to "$trimmed  (${item.name})")
                 }
             }
         }
         return result
     }
 
-    private fun computeDueAll(items: List<Item>): List<Pair<String, java.time.LocalDate>> {
+    private fun computeDueAll(items: List<Item>): List<Triple<String, String, java.time.LocalDate>> {
         val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
-        val result = mutableListOf<Pair<String, java.time.LocalDate>>()
+        val result = mutableListOf<Triple<String, String, java.time.LocalDate>>()
         items.forEach { item ->
             item.text.lines().forEach { line ->
                 val match = regex.find(line)
@@ -149,59 +149,36 @@ object VaultRepository {
                     } catch (e: Exception) {
                         null
                     }
-                    if (date != null) result.add(line.trim() to date)
+                    if (date != null) {
+                        result.add(Triple(item.id, "${line.trim()}  (${item.name})", date))
+                    }
                 }
             }
+        }
+        return result.sortedBy { it.third }
+    }
+
+    private fun computeTagLikeEntries(items: List<Item>, symbol: Char, regex: Regex): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        items.forEach { item ->
+            val tags = regex.findAll(item.text).map { it.groupValues[1] }.toSet()
+            tags.forEach { tag -> result.add(item.id to "$symbol$tag → ${item.name}") }
         }
         return result.sortedBy { it.second }
     }
 
-    private fun extractGroups(items: List<Item>, regex: Regex): List<Pair<String, List<String>>> {
-        val map = linkedMapOf<String, MutableSet<String>>()
-        items.forEach { item ->
-            regex.findAll(item.text).forEach { m ->
-                map.getOrPut(m.groupValues[1]) { mutableSetOf() }.add(item.name)
-            }
-        }
-        return map.entries
-            .sortedBy { it.key.lowercase(Locale.getDefault()) }
-            .map { (tag, names) -> tag to names.sorted() }
-    }
-
-    // Egy adott lekérdezéshez tartozó, widgeten megjeleníthető szöveget állít elő.
-    fun renderQuery(queryKey: String, items: List<Item>): String {
+    // Widget-listákhoz: (jegyzet URI, megjelenített sor) párok, kattinthatóan.
+    fun computeEntries(queryKey: String, items: List<Item>): List<Pair<String, String>> {
         return when (queryKey) {
-            "focus" -> {
-                val entries = computeFocusEntries(items)
-                if (entries.isEmpty()) "Nincs aktuális határidő."
-                else entries.take(6).joinToString("\n") { "• ${it.line}" }
-            }
-            "todo" -> {
-                val entries = computeTodoWait(items)
-                if (entries.isEmpty()) "Nincs TODO/WAIT bejegyzés."
-                else entries.take(6).joinToString("\n") { "• $it" }
-            }
-            "tags" -> {
-                val groups = extractGroups(items, Regex("#([\\p{L}\\p{N}_-]+)"))
-                if (groups.isEmpty()) "Nincs #cimke."
-                else groups.take(6).joinToString("\n") { (tag, names) -> "#$tag (${names.size})" }
-            }
-            "due" -> {
-                val entries = computeDueAll(items)
-                if (entries.isEmpty()) "Nincs due: bejegyzés."
-                else entries.take(6).joinToString("\n") { "• ${it.first}" }
-            }
-            "contexts" -> {
-                val groups = extractGroups(items, Regex("@([\\p{L}\\p{N}_-]+)"))
-                if (groups.isEmpty()) "Nincs @kontextus."
-                else groups.take(6).joinToString("\n") { (tag, names) -> "@$tag (${names.size})" }
-            }
-            "journal" -> {
-                val journalItems = items.filter { it.folder == "journals" }.sortedByDescending { it.name }
-                if (journalItems.isEmpty()) "Még nincs naplóbejegyzés."
-                else journalItems.take(6).joinToString("\n") { "• ${it.name}" }
-            }
-            else -> ""
+            "focus" -> computeFocusEntries(items).map { it.itemId to "${it.line}  (${it.itemName})" }
+            "todo" -> computeTodoWait(items)
+            "due" -> computeDueAll(items).map { (id, text, _) -> id to text }
+            "tags" -> computeTagLikeEntries(items, '#', Regex("#([\\p{L}\\p{N}_-]+)"))
+            "contexts" -> computeTagLikeEntries(items, '@', Regex("@([\\p{L}\\p{N}_-]+)"))
+            "journal" -> items.filter { it.folder == "journals" }
+                .sortedByDescending { it.name }
+                .map { it.id to it.name }
+            else -> emptyList()
         }
     }
 }
