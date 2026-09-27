@@ -79,7 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targetUri = targetFile?.uri ?: return null
 
         val content = readFileContent(context, targetUri)
-        val item = Item(id = targetUri.toString(), name = fileName, text = content)
+        val item = Item(id = targetUri.toString(), name = fileName, text = content, folder = "journals")
 
         val existingIndex = items.indexOfFirst { it.id == item.id }
         if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
@@ -103,10 +103,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun collectNotesFast(context: Context, treeUri: Uri): List<Item> = coroutineScope {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        val dirsToProcess = ArrayDeque<String>()
-        dirsToProcess.add(rootDocId)
+        val dirsToProcess = ArrayDeque<Pair<String, String>>()
+        dirsToProcess.add(rootDocId to "")
 
-        val fileDocs = mutableListOf<Pair<String, String>>()
+        val fileDocs = mutableListOf<Triple<String, String, String>>()
 
         val projection = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -115,7 +115,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         while (dirsToProcess.isNotEmpty()) {
-            val currentDocId = dirsToProcess.removeFirst()
+            val (currentDocId, topFolder) = dirsToProcess.removeFirst()
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, currentDocId)
 
             try {
@@ -132,10 +132,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (name.startsWith(".")) continue
 
                         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            dirsToProcess.add(docId)
+                            val childTopFolder = if (topFolder.isEmpty()) name else topFolder
+                            dirsToProcess.add(docId to childTopFolder)
                         } else if (name.endsWith(".md", true) || name.endsWith(".txt", true)) {
                             val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-                            fileDocs.add(docUri.toString() to name)
+                            fileDocs.add(Triple(docUri.toString(), name, topFolder))
                         }
                     }
                 }
@@ -144,11 +145,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val semaphore = Semaphore(8)
-        fileDocs.map { (uriString, name) ->
+        fileDocs.map { (uriString, name, topFolder) ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
                     val content = readFileContent(context, Uri.parse(uriString))
-                    Item(id = uriString, name = name, text = content)
+                    Item(id = uriString, name = name, text = content, folder = topFolder)
                 }
             }
         }.awaitAll()
@@ -186,7 +187,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".md"
         val newFile = pagesFolder.createFile("text/markdown", fileName) ?: return
         writeFileContent(context, newFile.uri, text.trim())
-        items.add(0, Item(id = newFile.uri.toString(), name = fileName, text = text.trim()))
+        items.add(0, Item(id = newFile.uri.toString(), name = fileName, text = text.trim(), folder = "pages"))
         query = ""
     }
 
@@ -210,7 +211,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         writeFileContent(context, targetUri, newContent)
 
         val existingIndex = items.indexOfFirst { it.id == targetUri.toString() }
-        val updatedItem = Item(id = targetUri.toString(), name = fileName, text = newContent)
+        val updatedItem = Item(id = targetUri.toString(), name = fileName, text = newContent, folder = "journals")
         if (existingIndex != -1) items[existingIndex] = updatedItem else items.add(0, updatedItem)
     }
 
@@ -272,4 +273,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         return result.sortedBy { it.date }
     }
+
+    data class LineEntry(val itemId: String, val itemName: String, val line: String)
+
+    fun todoWaitEntries(): List<LineEntry> {
+        val result = mutableListOf<LineEntry>()
+        items.forEach { item ->
+            item.text.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("TODO") || trimmed.startsWith("WAIT")) {
+                    result.add(LineEntry(item.id, item.name, trimmed))
+                }
+            }
+        }
+        return result
+    }
+
+    data class DueEntry(
+        val itemId: String,
+        val itemName: String,
+        val line: String,
+        val date: java.time.LocalDate
+    )
+
+    fun dueList(): List<DueEntry> {
+        val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
+        val result = mutableListOf<DueEntry>()
+        items.forEach { item ->
+            item.text.lines().forEach { line ->
+                val match = regex.find(line)
+                if (match != null) {
+                    val date = try {
+                        java.time.LocalDate.parse(match.groupValues[1])
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (date != null) {
+                        result.add(DueEntry(item.id, item.name, line.trim(), date))
+                    }
+                }
+            }
+        }
+        return result.sortedBy { it.date }
+    }
+
+    data class TagGroup(val tag: String, val items: List<Pair<String, String>>)
+
+    private fun extractGroups(regex: Regex): List<TagGroup> {
+        val map = linkedMapOf<String, MutableSet<Pair<String, String>>>()
+        items.forEach { item ->
+            regex.findAll(item.text).forEach { m ->
+                val key = m.groupValues[1]
+                map.getOrPut(key) { mutableSetOf() }.add(item.id to item.name)
+            }
+        }
+        return map.entries
+            .sortedBy { it.key.lowercase(Locale.getDefault()) }
+            .map { (tag, set) -> TagGroup(tag, set.sortedBy { it.second }) }
+    }
+
+    fun tagIndex(): List<TagGroup> = extractGroups(Regex("#([\\p{L}\\p{N}_-]+)"))
+
+    fun contextIndex(): List<TagGroup> = extractGroups(Regex("@([\\p{L}\\p{N}_-]+)"))
+
+    fun journalChronological(): List<Item> =
+        items.filter { it.folder == "journals" }.sortedByDescending { it.name }
 }
