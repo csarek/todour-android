@@ -1,7 +1,3 @@
-
-
-
-Mainactivity v2 · KT
 package com.example.todour
  
 import android.content.Intent
