@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withPermit
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.util.Locale
 
 object VaultRepository {
 
@@ -121,5 +122,86 @@ object VaultRepository {
             }
         }
         return result.sortedBy { it.date }
+    }
+
+    private fun computeTodoWait(items: List<Item>): List<String> {
+        val result = mutableListOf<String>()
+        items.forEach { item ->
+            item.text.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("TODO") || trimmed.startsWith("WAIT")) {
+                    result.add(trimmed)
+                }
+            }
+        }
+        return result
+    }
+
+    private fun computeDueAll(items: List<Item>): List<Pair<String, java.time.LocalDate>> {
+        val regex = Regex("""due:(\d{4}-\d{2}-\d{2})""")
+        val result = mutableListOf<Pair<String, java.time.LocalDate>>()
+        items.forEach { item ->
+            item.text.lines().forEach { line ->
+                val match = regex.find(line)
+                if (match != null) {
+                    val date = try {
+                        java.time.LocalDate.parse(match.groupValues[1])
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (date != null) result.add(line.trim() to date)
+                }
+            }
+        }
+        return result.sortedBy { it.second }
+    }
+
+    private fun extractGroups(items: List<Item>, regex: Regex): List<Pair<String, List<String>>> {
+        val map = linkedMapOf<String, MutableSet<String>>()
+        items.forEach { item ->
+            regex.findAll(item.text).forEach { m ->
+                map.getOrPut(m.groupValues[1]) { mutableSetOf() }.add(item.name)
+            }
+        }
+        return map.entries
+            .sortedBy { it.key.lowercase(Locale.getDefault()) }
+            .map { (tag, names) -> tag to names.sorted() }
+    }
+
+    // Egy adott lekérdezéshez tartozó, widgeten megjeleníthető szöveget állít elő.
+    fun renderQuery(queryKey: String, items: List<Item>): String {
+        return when (queryKey) {
+            "focus" -> {
+                val entries = computeFocusEntries(items)
+                if (entries.isEmpty()) "Nincs aktuális határidő."
+                else entries.take(6).joinToString("\n") { "• ${it.line}" }
+            }
+            "todo" -> {
+                val entries = computeTodoWait(items)
+                if (entries.isEmpty()) "Nincs TODO/WAIT bejegyzés."
+                else entries.take(6).joinToString("\n") { "• $it" }
+            }
+            "tags" -> {
+                val groups = extractGroups(items, Regex("#([\\p{L}\\p{N}_-]+)"))
+                if (groups.isEmpty()) "Nincs #cimke."
+                else groups.take(6).joinToString("\n") { (tag, names) -> "#$tag (${names.size})" }
+            }
+            "due" -> {
+                val entries = computeDueAll(items)
+                if (entries.isEmpty()) "Nincs due: bejegyzés."
+                else entries.take(6).joinToString("\n") { "• ${it.first}" }
+            }
+            "contexts" -> {
+                val groups = extractGroups(items, Regex("@([\\p{L}\\p{N}_-]+)"))
+                if (groups.isEmpty()) "Nincs @kontextus."
+                else groups.take(6).joinToString("\n") { (tag, names) -> "@$tag (${names.size})" }
+            }
+            "journal" -> {
+                val journalItems = items.filter { it.folder == "journals" }.sortedByDescending { it.name }
+                if (journalItems.isEmpty()) "Még nincs naplóbejegyzés."
+                else journalItems.take(6).joinToString("\n") { "• ${it.name}" }
+            }
+            else -> ""
+        }
     }
 }
