@@ -17,7 +17,9 @@ class TodourWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                updateAllWidgets(context, appWidgetManager, appWidgetIds)
+                appWidgetIds.forEach { widgetId ->
+                    updateSingleWidget(context, appWidgetManager, widgetId)
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -54,7 +56,6 @@ class TodourWidgetProvider : AppWidgetProvider() {
         const val ACTION_NEXT = "com.example.todour.WIDGET_NEXT"
         private const val PREFS_NAME = "todour_widget_prefs"
 
-        // (belső kulcs, megjelenített cím)
         val QUERIES = listOf(
             "focus" to "🎯 Fókusz",
             "todo" to "☑️ TODO / WAIT",
@@ -66,49 +67,44 @@ class TodourWidgetProvider : AppWidgetProvider() {
 
         private fun keyFor(widgetId: Int) = "query_index_$widgetId"
 
-        suspend fun updateAllWidgets(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-            appWidgetIds.forEach { widgetId ->
-                updateSingleWidget(context, appWidgetManager, widgetId)
-            }
-        }
-
         suspend fun updateSingleWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val widgetPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val index = widgetPrefs.getInt(keyFor(widgetId), 0).coerceIn(0, QUERIES.size - 1)
-            val (queryKey, queryLabel) = QUERIES[index]
+            val (_, queryLabel) = QUERIES[index]
 
             val vaultPrefs = context.getSharedPreferences("todour_prefs", Context.MODE_PRIVATE)
             val vaultUriString = vaultPrefs.getString("vault_uri", null)
 
-            val statusText = if (vaultUriString == null) {
+            val emptyMessage = if (vaultUriString == null)
                 "Nincs mappa kiválasztva.\nNyisd meg az appot a beállításhoz."
-            } else {
-                try {
-                    val uri = Uri.parse(vaultUriString)
-                    val items = VaultRepository.scanVault(context, uri)
-                    VaultRepository.renderQuery(queryKey, items)
-                } catch (e: Exception) {
-                    "Nem sikerült betölteni a jegyzeteket."
-                }
-            }
+            else
+                "Nincs találat ehhez a lekérdezéshez."
 
             val views = RemoteViews(context.packageName, R.layout.widget_todour)
             views.setTextViewText(R.id.widget_query_label, queryLabel)
-            views.setTextViewText(R.id.widget_status, statusText)
+            views.setTextViewText(R.id.widget_empty, emptyMessage)
+            views.setEmptyView(R.id.widget_list, R.id.widget_empty)
 
-            val launchIntent = Intent(context, MainActivity::class.java)
-            val launchPendingIntent = PendingIntent.getActivity(
+            val adapterIntent = Intent(context, TodourWidgetService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                data = Uri.parse("todour://widget/$widgetId")
+            }
+            views.setRemoteAdapter(R.id.widget_list, adapterIntent)
+
+            val clickTemplateIntent = Intent(context, MainActivity::class.java)
+            val clickTemplatePendingIntent = PendingIntent.getActivity(
                 context,
                 widgetId,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                clickTemplateIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
-            views.setOnClickPendingIntent(R.id.widget_status, launchPendingIntent)
+            views.setPendingIntentTemplate(R.id.widget_list, clickTemplatePendingIntent)
 
             views.setOnClickPendingIntent(R.id.widget_prev, navPendingIntent(context, widgetId, ACTION_PREV))
             views.setOnClickPendingIntent(R.id.widget_next, navPendingIntent(context, widgetId, ACTION_NEXT))
 
             appWidgetManager.updateAppWidget(widgetId, views)
+            appWidgetManager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
         }
 
         private fun navPendingIntent(context: Context, widgetId: Int, action: String): PendingIntent {
