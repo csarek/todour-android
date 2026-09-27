@@ -15,7 +15,9 @@ object WidgetUpdater {
         val ids = manager.getAppWidgetIds(componentName)
         if (ids.isEmpty()) return
         CoroutineScope(Dispatchers.IO).launch {
-            TodourWidgetProvider.updateAllWidgets(appContext, manager, ids)
+            ids.forEach { widgetId ->
+                TodourWidgetProvider.updateSingleWidget(appContext, manager, widgetId)
+            }
         }
     }
 }
