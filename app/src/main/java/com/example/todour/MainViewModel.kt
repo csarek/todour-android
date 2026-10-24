@@ -12,14 +12,19 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
@@ -40,6 +45,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var isDarkTheme by mutableStateOf(false)
         private set
+
+    private val pendingWrites = mutableMapOf<String, Job>()
 
     init {
         dateFormatPattern = prefs.getString("journal_date_format", "yyyy_MM_dd") ?: "yyyy_MM_dd"
@@ -107,41 +114,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getOrOpenInbox(onResult: (Item?) -> Unit) {
-    val uri = vaultUri
-    if (uri == null) {
-        onResult(null)
-        return
-    }
-    viewModelScope.launch(Dispatchers.IO) {
-        val context = getApplication<Application>()
-        val root = DocumentFile.fromTreeUri(context, uri)
-        if (root == null) {
-            withContext(Dispatchers.Main) { onResult(null) }
-            return@launch
+        val uri = vaultUri
+        if (uri == null) {
+            onResult(null)
+            return
         }
-        val existing = root.findFile("INBOX.md")
-        val targetFile = existing ?: root.createFile("text/markdown", "INBOX.md")
-        val targetUri = targetFile?.uri
-        if (targetUri == null) {
-            withContext(Dispatchers.Main) { onResult(null) }
-            return@launch
-        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val root = DocumentFile.fromTreeUri(context, uri)
+            if (root == null) {
+                withContext(Dispatchers.Main) { onResult(null) }
+                return@launch
+            }
+            val existing = root.findFile("INBOX.md")
+            val targetFile = existing ?: root.createFile("text/markdown", "INBOX.md")
+            val targetUri = targetFile?.uri
+            if (targetUri == null) {
+                withContext(Dispatchers.Main) { onResult(null) }
+                return@launch
+            }
 
-        val content = readFileContent(context, targetUri)
-        val item = Item(id = targetUri.toString(), name = "INBOX.md", text = content, folder = "")
+            val content = readFileContent(context, targetUri)
+            val item = Item(id = targetUri.toString(), name = "INBOX.md", text = content, folder = "")
 
-        withContext(Dispatchers.Main) {
-            val existingIndex = items.indexOfFirst { it.id == item.id }
-            if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
-            onResult(item)
+            withContext(Dispatchers.Main) {
+                val existingIndex = items.indexOfFirst { it.id == item.id }
+                if (existingIndex != -1) items[existingIndex] = item else items.add(0, item)
+                onResult(item)
+            }
         }
     }
-}
-    
+
+    private fun cacheFile(context: Context): File = File(context.filesDir, "todour_cache.json")
+
+    private fun loadCache(context: Context): List<Item>? {
+        return try {
+            val file = cacheFile(context)
+            if (!file.exists()) return null
+            val arr = JSONArray(file.readText())
+            val result = mutableListOf<Item>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                result.add(
+                    Item(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        text = obj.getString("text"),
+                        folder = obj.optString("folder", "")
+                    )
+                )
+            }
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun saveCache(context: Context, data: List<Item>) {
+        try {
+            val arr = JSONArray()
+            data.forEach { item ->
+                val obj = JSONObject()
+                obj.put("id", item.id)
+                obj.put("name", item.name)
+                obj.put("text", item.text)
+                obj.put("folder", item.folder)
+                arr.put(obj)
+            }
+            cacheFile(context).writeText(arr.toString())
+        } catch (e: Exception) {
+        }
+    }
+
     fun loadNotes() {
         val uri = vaultUri ?: return
         val context = getApplication<Application>()
-        isLoading = true
+
+        if (items.isEmpty()) {
+            loadCache(context)?.let { cached ->
+                items.addAll(cached)
+            }
+        }
+        isLoading = items.isEmpty()
+
         viewModelScope.launch {
             val found = withContext(Dispatchers.IO) {
                 collectNotesFast(context, uri)
@@ -149,6 +204,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             items.clear()
             items.addAll(found)
             isLoading = false
+            withContext(Dispatchers.IO) {
+                saveCache(context, found)
+            }
         }
     }
 
@@ -195,7 +253,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        val semaphore = Semaphore(8)
+        val semaphore = Semaphore(16)
         fileDocs.map { (uriString, name, topFolder) ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
@@ -275,6 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun remove(item: Item) {
+        pendingWrites.remove(item.id)?.cancel()
         items.removeAll { it.id == item.id }
         viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>()
@@ -289,10 +348,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (index != -1) {
             items[index] = item.copy(text = newText)
         }
+
+        pendingWrites[item.id]?.cancel()
         val context = getApplication<Application>()
-        viewModelScope.launch(Dispatchers.IO) {
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            delay(500)
             writeFileContent(context, Uri.parse(item.id), newText)
         }
+        pendingWrites[item.id] = job
     }
 
     val filteredItems: List<Item>
@@ -393,9 +456,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .map { (tag, set) -> TagGroup(tag, set.sortedBy { it.second }) }
     }
 
-    fun tagIndex(): List<TagGroup> = extractGroups(Regex("#([\\p{L}\\p{N}_-]+)"))
+    fun tagIndex(): List<TagGroup> =
+        extractGroups(Regex("(?<![\\p{L}\\p{N}_])#([\\p{L}\\p{N}_-]+)"))
 
-    fun contextIndex(): List<TagGroup> = extractGroups(Regex("@([\\p{L}\\p{N}_-]+)"))
+    fun contextIndex(): List<TagGroup> =
+        extractGroups(Regex("(?<![\\p{L}\\p{N}_.])@([\\p{L}\\p{N}_-]+)"))
 
     fun journalChronological(): List<Item> =
         items.filter { it.folder == "journals" }.sortedByDescending { it.name }
