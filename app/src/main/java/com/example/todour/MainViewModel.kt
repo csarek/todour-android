@@ -457,10 +457,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun tagIndex(): List<TagGroup> =
-        extractGroups(Regex("(?<![\\p{L}\\p{N}_])#([\\p{L}\\p{N}_-]+)"))
+            extractGroups(Regex("(?<!\\S)#([\\p{L}\\p{N}_-]+)"))
 
     fun contextIndex(): List<TagGroup> =
-        extractGroups(Regex("(?<![\\p{L}\\p{N}_.])@([\\p{L}\\p{N}_-]+)"))
+            extractGroups(Regex("(?<!\\S)@([\\p{L}\\p{N}_-]+)"))
 
     fun journalChronological(): List<Item> =
         items.filter { it.folder == "journals" }.sortedByDescending { it.name }
