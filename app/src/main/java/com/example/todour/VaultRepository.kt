@@ -173,8 +173,8 @@ object VaultRepository {
             "focus" -> computeFocusEntries(items).map { it.itemId to "${it.line}  (${it.itemName})" }
             "todo" -> computeTodoWait(items)
             "due" -> computeDueAll(items).map { (id, text, _) -> id to text }
-            "tags" -> computeTagLikeEntries(items, '#', Regex("(?<![\\p{L}\\p{N}_])#([\\p{L}\\p{N}_-]+)"))
-            "contexts" -> computeTagLikeEntries(items, '@', Regex("(?<![\\p{L}\\p{N}_.])@([\\p{L}\\p{N}_-]+)"))
+            "tags" -> computeTagLikeEntries(items, '#', Regex("(?<!\\S)#([\\p{L}\\p{N}_-]+)"))
+            "contexts" -> computeTagLikeEntries(items, '@', Regex("(?<!\\S)@([\\p{L}\\p{N}_-]+)"))
             "journal" -> items.filter { it.folder == "journals" }
                 .sortedByDescending { it.name }
                 .map { it.id to it.name }
