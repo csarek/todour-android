@@ -66,6 +66,19 @@ private fun markCurrentLineDone(value: TextFieldValue): TextFieldValue {
     return TextFieldValue(newText, TextRange(cursor))
 }
 
+private fun wrapSelectionAsLink(value: TextFieldValue): Pair<TextFieldValue, String>? {
+    val start = value.selection.start
+    val end = value.selection.end
+    if (start == end) return null
+    val selStart = minOf(start, end)
+    val selEnd = maxOf(start, end)
+    val selectedText = value.text.substring(selStart, selEnd).trim()
+    if (selectedText.isBlank()) return null
+    val newText = value.text.substring(0, selStart) + "[[" + selectedText + "]]" + value.text.substring(selEnd)
+    val newCursor = selStart + selectedText.length + 4
+    return TextFieldValue(newText, TextRange(newCursor)) to selectedText
+}
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
@@ -159,6 +172,7 @@ fun TodourApp(
     var showDueDialog by remember { mutableStateOf(false) }
     var showContextsDialog by remember { mutableStateOf(false) }
     var showJournalListDialog by remember { mutableStateOf(false) }
+    var showLinkHintDialog by remember { mutableStateOf(false) }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -483,6 +497,19 @@ fun TodourApp(
                                 editedValue = markCurrentLineDone(editedValue)
                                 viewModel.update(current, editedValue.text)
                             }) { Text("✓ Kész") }
+                            TextButton(onClick = {
+                                val result = wrapSelectionAsLink(editedValue)
+                                if (result == null) {
+                                            showLinkHintDialog = true
+                                } else {
+                                     val (newValue, linkName) = result
+                                    editedValue = newValue
+                                    viewModel.update(current, newValue.text)
+                                        viewModel.createOrOpenLinkedNote(linkName) { linkedItem ->
+                                    selectedItem = linkedItem
+                                            }
+                                        }
+                                }) { Text("🔗 Link") }
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -799,4 +826,14 @@ fun TodourApp(
             }
         )
     }
+    if (showLinkHintDialog) {
+    AlertDialog(
+        onDismissRequest = { showLinkHintDialog = false },
+        title = { Text("Nincs kijelölés") },
+        text = { Text("Előbb jelölj ki egy szövegrészt a szerkesztőben, amit linkké szeretnél alakítani.") },
+        confirmButton = {
+            TextButton(onClick = { showLinkHintDialog = false }) { Text("Rendben") }
+        }
+    )
+}
 }
