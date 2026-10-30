@@ -457,11 +457,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun tagIndex(): List<TagGroup> =
-            extractGroups(Regex("(?<!\\S)#([\\p{L}\\p{N}_-]+)"))
+        extractGroups(Regex("(?<!\\S)#([\\p{L}\\p{N}_-]+)"))
 
     fun contextIndex(): List<TagGroup> =
-            extractGroups(Regex("(?<!\\S)@([\\p{L}\\p{N}_-]+)"))
+        extractGroups(Regex("(?<!\\S)@([\\p{L}\\p{N}_-]+)"))
 
     fun journalChronological(): List<Item> =
         items.filter { it.folder == "journals" }.sortedByDescending { it.name }
+
+    // Zettelkasten-stílusú visszamutató hivatkozások: mely jegyzetek linkelnek erre [[jegyzet neve]] formában.
+    fun backlinksFor(item: Item): List<Item> {
+        val baseName = item.name.removeSuffix(".md").removeSuffix(".txt")
+        if (baseName.isBlank()) return emptyList()
+        val linkRegex = Regex("\\[\\[" + Regex.escape(baseName) + "(\\|[^\\]]*)?\\]\\]", RegexOption.IGNORE_CASE)
+        return items.filter { it.id != item.id && linkRegex.containsMatchIn(it.text) }
+    }
 }
