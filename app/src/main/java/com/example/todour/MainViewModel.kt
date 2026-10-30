@@ -471,5 +471,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (baseName.isBlank()) return emptyList()
         val linkRegex = Regex("\\[\\[" + Regex.escape(baseName) + "(\\|[^\\]]*)?\\]\\]", RegexOption.IGNORE_CASE)
         return items.filter { it.id != item.id && linkRegex.containsMatchIn(it.text) }
+    // Kijelölt szöveg linkké alakításakor hívódik: ha már van ilyen nevű jegyzet, visszaadja azt,
+// egyébként létrehoz egy újat ezzel a névvel a pages mappában.
+fun createOrOpenLinkedNote(name: String, onResult: (Item) -> Unit) {
+    val trimmedName = name.trim()
+    if (trimmedName.isBlank()) return
+
+    val existing = items.find {
+        val base = it.name.removeSuffix(".md").removeSuffix(".txt")
+        base.equals(trimmedName, ignoreCase = true)
     }
+    if (existing != null) {
+        onResult(existing)
+        return
+    }
+
+    val uri = vaultUri ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+        val context = getApplication<Application>()
+        val root = DocumentFile.fromTreeUri(context, uri) ?: return@launch
+        val pagesFolder = getOrCreateFolder(root, "pages") ?: return@launch
+        val fileName = trimmedName.replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".md"
+        val targetFile = pagesFolder.findFile(fileName) ?: pagesFolder.createFile("text/markdown", fileName) ?: return@launch
+        val content = readFileContent(context, targetFile.uri)
+        val item = Item(id = targetFile.uri.toString(), name = fileName, text = content, folder = "pages")
+        withContext(Dispatchers.Main) {
+            val idx = items.indexOfFirst { it.id == item.id }
+            if (idx != -1) items[idx] = item else items.add(0, item)
+            onResult(item)
+        }
+    }
+}
+
 }
