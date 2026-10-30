@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,8 +26,45 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+// ---- Szerkesztő-segédfüggvények: beillesztés/kész-jelölés a kurzor pozíciójánál ----
+
+private fun insertAtCursor(value: TextFieldValue, insertText: String): TextFieldValue {
+    val selStart = value.selection.start
+    val selEnd = value.selection.end
+    val newText = value.text.substring(0, selStart) + insertText + value.text.substring(selEnd)
+    val newCursor = selStart + insertText.length
+    return TextFieldValue(newText, TextRange(newCursor))
+}
+
+private fun insertLinePrefixAtCursor(value: TextFieldValue, prefix: String): TextFieldValue {
+    val selStart = value.selection.start
+    val needsNewlineBefore = selStart > 0 && value.text.getOrNull(selStart - 1) != '\n'
+    val insertText = (if (needsNewlineBefore) "\n" else "") + prefix
+    return insertAtCursor(value.copy(selection = TextRange(selStart, value.selection.end)), insertText)
+}
+
+private fun markCurrentLineDone(value: TextFieldValue): TextFieldValue {
+    val text = value.text
+    val cursor = value.selection.start
+    val lineStart = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
+    var lineEnd = text.indexOf('\n', cursor)
+    if (lineEnd == -1) lineEnd = text.length
+    val line = text.substring(lineStart, lineEnd)
+    val trimmed = line.trimStart()
+    val leadingWhitespace = line.substring(0, line.length - trimmed.length)
+    val newLine = when {
+        trimmed.startsWith("TODO") -> leadingWhitespace + "DONE" + trimmed.removePrefix("TODO")
+        trimmed.startsWith("WAIT") -> leadingWhitespace + "DONE" + trimmed.removePrefix("WAIT")
+        else -> line
+    }
+    val newText = text.substring(0, lineStart) + newLine + text.substring(lineEnd)
+    return TextFieldValue(newText, TextRange(cursor))
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -125,7 +163,6 @@ fun TodourApp(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Widgetről érkező megnyitási kérés kezelése
     LaunchedEffect(openItemId, viewModel.items.size) {
         if (openItemId != null) {
             val found = viewModel.items.find { it.id == openItemId }
@@ -361,7 +398,7 @@ fun TodourApp(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(0.55f)
+                            .weight(0.4f)
                     ) {
                         items(
                             items = viewModel.filteredItems,
@@ -415,20 +452,50 @@ fun TodourApp(
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                     val current = selectedItem
                     if (current != null) {
-                        var editedText by remember(current.id) { mutableStateOf(current.text) }
+                        var editedValue by remember(current.id) { mutableStateOf(TextFieldValue(current.text)) }
+                        val backlinks = remember(current.id, viewModel.items.size) { viewModel.backlinksFor(current) }
+
+                        // Gyors beillesztő eszköztár
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = {
+                                editedValue = insertLinePrefixAtCursor(editedValue, "TODO ")
+                                viewModel.update(current, editedValue.text)
+                            }) { Text("+ TODO") }
+                            TextButton(onClick = {
+                                editedValue = insertLinePrefixAtCursor(editedValue, "WAIT ")
+                                viewModel.update(current, editedValue.text)
+                            }) { Text("+ WAIT") }
+                            TextButton(onClick = {
+                                val today = java.time.LocalDate.now().toString()
+                                editedValue = insertAtCursor(editedValue, "due:$today ")
+                                viewModel.update(current, editedValue.text)
+                            }) { Text("+ due:") }
+                            TextButton(onClick = {
+                                editedValue = markCurrentLineDone(editedValue)
+                                viewModel.update(current, editedValue.text)
+                            }) { Text("✓ Kész") }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
                         TextField(
-                            value = editedText,
-                            onValueChange = {
-                                editedText = it
-                                viewModel.update(current, it)
+                            value = editedValue,
+                            onValueChange = { newValue ->
+                                editedValue = newValue
+                                viewModel.update(current, newValue.text)
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(0.45f),
+                                .weight(0.42f),
                             placeholder = { Text("Írd ide a jegyzetet...") },
                             textStyle = MaterialTheme.typography.bodyLarge,
                             colors = TextFieldDefaults.colors(
@@ -438,6 +505,31 @@ fun TodourApp(
                                 focusedIndicatorColor = Color.Transparent
                             )
                         )
+
+                        if (backlinks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "🔗 Erre hivatkoznak (${backlinks.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                            ) {
+                                backlinks.forEach { linked ->
+                                    Text(
+                                        linked.name,
+                                        modifier = Modifier
+                                            .padding(end = 12.dp, top = 2.dp)
+                                            .clickable { selectedItem = linked },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         Box(
                             modifier = Modifier
